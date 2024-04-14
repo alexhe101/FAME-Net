@@ -8,10 +8,7 @@
 '''
 
 from utils.config import get_config
-from solver.unisolver import Solver
-# from solver.gf_solver import Solver
-# from solver.midnsolver import Solver
-# from solver.innformersolver import Solver
+from solver.moesolver import Solver
 import argparse
 
 if __name__ == '__main__':
