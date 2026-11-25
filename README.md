@@ -1,109 +1,130 @@
+<div align="center">
+
 # FAME-Net
 
-This folder contains the implementation of the paper **Frequency-Adaptive Pan-Sharpening with Mixture of Experts** . 
-**Please note that the training datasets are not currently public.**
+### Frequency-Adaptive Pan-Sharpening with Mixture of Experts
 
-## Getting Started
-**Note: please generate the mask label by dct first, and put them into the dataset folder; refer to the Data class in data/dataset.py**
+**AAAI 2024 · Official implementation**
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
+Xuanhua He\*, Keyu Yan\*, Rui Li, Chengjun Xie, Jie Zhang†, Man Zhou†
 
-### Prerequisites
+\* Equal contribution · † Corresponding authors
 
-In order to run this implementation, you need to have the following software and libraries installed:
+[AAAI Paper](https://doi.org/10.1609/aaai.v38i3.27984) · [arXiv](https://arxiv.org/abs/2401.02151) · [Project page](https://alexhe101.github.io/FAME-Net/) · [Modern documentation](modern/README.md)
 
-- Python 3.7 or later
-- PyTorch 1.6 or later
-- CUDA (if using GPU)
-- NumPy
-- Matplotlib
-- OpenCV
-- PyYAML
+[![FAME-Net Modern CI](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml/badge.svg)](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml)
 
-### Installing
-You can install the necessary packages using pip:
+</div>
+
+![Conceptual FAME-Net architecture](docs/assets/architecture.svg)
+
+## Overview
+
+FAME-Net reconstructs high-resolution multispectral images (HRMS) from low-resolution multispectral images (LRMS) and high-resolution panchromatic guidance (PAN). A learned spatial mask separates detail-rich and smoother regions; high- and low-frequency expert banks specialize in their reconstruction. A final top-k expert mixture combines both streams and the input features.
+
+**FAME-Net Modern** is a paper-first reconstruction, not a blind refactor of the original public release. The original source remains unchanged. The default profile follows the paper's mask, routing, fusion and loss definitions; a separate legacy profile preserves the original active layer configuration for checkpoint migration, while fixing broken dispatch.
+
+## Published results
+
+Original AAAI 2024 Table 1, reduced-resolution Wald protocol:
+
+| Sensor | PSNR ↑ | SSIM ↑ | SAM ↓ | ERGAS ↓ |
+|:--|--:|--:|--:|--:|
+| WorldView-II | 42.0262 | 0.9723 | 0.0215 | 0.9172 |
+| GaoFen2 | 47.6721 | 0.9898 | 0.0098 | 0.5242 |
+| WorldView-III | 30.9903 | 0.9287 | 0.0697 | 2.9531 |
+
+| Method | WV2 PSNR ↑ | GF2 PSNR ↑ | WV3 PSNR ↑ |
+|:--|--:|--:|--:|
+| PanNet | 40.8176 | 43.0659 | 29.6840 |
+| MSDCNN | 41.3355 | 45.6847 | 30.3038 |
+| SRPPNN | 41.4538 | 47.1998 | 30.4346 |
+| GPPNN | 41.1622 | 44.2145 | 30.1785 |
+| MutNet | 41.6773 | 47.3042 | 30.4907 |
+| INNformer | 41.6903 | 47.3528 | 30.5365 |
+| SFINet | 41.7244 | 47.4712 | 30.5901 |
+| FAME-Net | 42.0262 | 47.6721 | 30.9903 |
+
+Full-resolution GaoFen2 (Table 2): Dλ = 0.0674, Ds = 0.1121, QNR = 0.8291. The original method leads PSNR on all three reduced-resolution datasets and QNR on GF2, but does not lead every metric. These are original published results, **not new measurements of the modern implementation**.
+
+[![Original WorldView-III qualitative result panel, from HFIPS research announcement](https://english.hf.cas.cn/nr/bth/202401/W020240110586641199125.png)](https://english.hf.cas.cn/nr/bth/202401/t20240110_655042.html)
+
+Original qualitative comparison (paper Figure 5, also published by [HFIPS](https://english.hf.cas.cn/nr/bth/202401/t20240110_655042.html)); credit: Jie Zhang / HFIPS. The original labels and publication rights are retained. If the external image is unavailable, see [Figures 5–6 in the PDF](https://arxiv.org/pdf/2401.02151v1#page=7).
+
+## Quick start
+
+Python 3.10+ and PyTorch 2.4+. Install an appropriate PyTorch build for your device, then:
+
+```bash
+git clone https://github.com/alexhe101/FAME-Net.git
+cd FAME-Net
+python -m pip install -e './modern[dev]'
+python -m pytest modern/tests -q -rs
+```
 
 ```python
-pip install torch numpy matplotlib opencv-python pyyaml
+import torch
+from famenet import FAMENet
+
+model = FAMENet(bands=4, width=32, experts=4, top_k=2, scale=4).eval()
+ms = torch.rand(1, 4, 32, 32)
+pan = torch.rand(1, 1, 128, 128)
+
+with torch.inference_mode():
+    result = model(ms, pan)
+
+print(result.hrms.shape)     # [1, 4, 128, 128]
+print(result.mask.shape)     # [1, 2, 128, 128]
+print(result.gates[0].shape) # [1, 4], full expert weight vector
 ```
 
-### Configuration
+Random inputs and weights demonstrate the API, not model quality. Use co-registered data with consistent band order and radiometric normalization.
 
-Before training the model, you need to configure the following options in the `option.yaml` file:
-
-- `log_dir`: the directory to store the training log files.
-- `checkpoint`: the directory to store the trained model parameters.
-- `data_dir_train`: the directory of the training data.
-- `data_dir_eval`: the directory of the evaluation data.
-
-### Training the Model
-
-To train the model, you can run the following command:
-
-```
-python main.py
+```bash
+# Train the paper-first model on your own paired data
+famenet train --data train_npz --output runs/fame --device cuda --amp
+famenet infer --checkpoint runs/fame/latest.pth --input sample.npz --output result.npz
+# Import a historical checkpoint with the legacy profile
+famenet infer --routing legacy --checkpoint legacy.pth --input sample.npz --output result.npz
+# Compare actual sparse and dense execution (no assumed speedup)
+famenet benchmark --device cuda --batch 4 --dispatch sparse
+famenet benchmark --device cuda --batch 4 --dispatch dense
 ```
 
-### Testing the Model
+See [modern documentation](modern/README.md) for NPZ inputs, DCT-derived mask labels, paper/legacy differences and validation.
 
-To test the trained WINet model, you can run the following command:
+## Data and checkpoints
 
+The original release does not provide its training datasets or trained weights. Prepare sensor-specific paired samples under the Wald protocol, matching the training radiometry, band order and spatial scale. Original experiments used WorldView-II, GaoFen2 and WorldView-III. The modern loader accepts explicit NPZ arrays and preserves all multispectral channels at output. Exact private mask-label thresholds and degradation settings are unavailable.
+
+The old `main.py`, `test.py`, `model/` and `solver/` are preserved for historical reference; the release contains inconsistent expert dispatch and solver return contracts. Use the new CLI for new experiments. The new profile is a documented reconstruction and has not reproduced the original dataset metrics.
+
+## Validation
+
+[GitHub Actions](https://github.com/alexhe101/FAME-Net/actions/runs/45544297751): all 18 CPU tests passed on each of Python 3.10 and 3.12, including repaired legacy-reference parity and paper-router checks. These are synthetic regression tests, not a reproduction of the published image-quality metrics or a GPU speed benchmark.
+
+## Repository layout
+
+| Path | Purpose |
+|:--|:--|
+| [modern/src/famenet/](modern/src/famenet/) | Model, routing, checkpoint migration, losses, DCT labels, CLI |
+| [modern/tests/](modern/tests/) | Numerical routing, checkpoint, legacy-reference, and training tests |
+| [modern/README.md](modern/README.md) | Data contract and migration guide |
+| [model/moe.py](model/moe.py) | Original published model (unchanged) |
+| [docs/](docs/) | Static academic project page |
+
+## Citation
+
+```bibtex
+@inproceedings{he2024fame,
+  title     = {Frequency-Adaptive Pan-Sharpening with Mixture of Experts},
+  author    = {He, Xuanhua and Yan, Keyu and Li, Rui and
+               Xie, Chengjun and Zhang, Jie and Zhou, Man},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume    = {38},
+  number    = {3},
+  pages     = {2121--2129},
+  year      = {2024},
+  doi       = {10.1609/aaai.v38i3.27984}
+}
 ```
-python test.py
-python py-tra/demo_deep_methods.py
-```
-
-### Configuration
-
-The configuration options are stored in the `option.yaml` file. Here is an explanation of each of the options:
-
-#### algorithm
-
-- algorithm: The model for training
-
-#### Logging
-
-- `log_dir`: The location where the log files will be stored.
-
-#### Model Weights
-
-- `checkpoint`: The location to store the model weights.
-
-#### Training Data
-
-- `data_dir_train`: The location of the training data.
-- `data_dir_eval`: The location of the test data.
-
-#### Pretrain
-
-- `pretrained`: Whether to use a pretrained model.
-- `pre_sr`: The location of the pretrained model.
-- `pre_folder`: The location where the pretrained models are stored.
-
-#### Testing
-
-- `algorithm`: The algorithm to use for testing.
-- `type`: The type of testing, either `test` or `eval`.
-- `data_dir`: The location of the test data.
-- `source_ms`: The source of the multi-spectral data.
-- `source_pan`: The source of the panchromatic data.
-- `model`: The location of the model to use for testing.
-- `save_dir`: The location to save the test results.
-
-#### Data Processing
-
-- `upscale`: The upscale factor.
-- `batch_size`: The size of each batch.
-- `patch_size`: The size of each patch.
-- `data_augmentation`: Whether to use data augmentation.
-- `n_colors`: The number of color channels.
-- `rgb_range`: The range of the RGB values.
-- `normalize`: Whether to normalize the data.
-
-#### Training Hyperparameters
-
-- `schedule.lr`: The learning rate.
-- `schedule.decay`: The learning rate decay.
-- `schedule.gamma`: The learning rate decay factor.
-- `schedule.optimizer`: The optimizer to use, either `ADAM`, `SGD`, or `RMSprop`.
-- `schedule.momentum`: The momentum for the `SGD` optimizer.

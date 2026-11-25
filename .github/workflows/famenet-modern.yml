@@ -1,0 +1,22 @@
+name: FAME-Net Modern
+on:
+  push:
+    paths: ['modern/**', 'model/**', '.github/workflows/famenet-modern.yml']
+  pull_request:
+    paths: ['modern/**', 'model/**', '.github/workflows/famenet-modern.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install -e './modern[dev]'
+      - run: python -m pytest modern/tests -q -rs
