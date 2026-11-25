@@ -16,11 +16,11 @@ class FAMEOutput(NamedTuple):
 
 
 class MaskPredictor(nn.Module):
-    def __init__(self, channels: int):
+    def __init__(self, channels: int, slope: float = 0.0):
         super().__init__()
         self.conv = nn.Conv2d(2 * channels, channels, 3, padding=1)
         self.spatial_mask = nn.Conv2d(channels, 2, 1, bias=False)
-        self.relu = nn.LeakyReLU(0.1)
+        self.relu = nn.LeakyReLU(slope)
 
     def forward(self, x: Tensor, sample: bool) -> Tensor:
         logits = self.spatial_mask(self.relu(self.conv(x)))
@@ -52,28 +52,32 @@ class MOEInstance(nn.Module):
 class FAMENet(nn.Module):
     """Paper configuration: 4 MS bands, width 32, 4 experts, top-2, scale 4.
 
-    Default legacy routing preserves released gate weighting; use paper routing
-    for the equations in the paper. The original release has broken dispatch.
+    The default paper profile follows the written equations; the legacy profile
+    keeps release-specific layer behavior for checkpoint migration. Both fix dispatch.
     """
     def __init__(
         self, bands: int = 4, width: int = 32, experts: int = 4,
-        top_k: int = 2, scale: int = 4, routing: Routing = "legacy",
+        top_k: int = 2, scale: int = 4, routing: Routing = "paper",
         dispatch: Dispatch = "sparse",
+        head: str | None = None,
     ):
         super().__init__()
         if bands < 1 or width < 4 or width % 2 or scale < 1:
             raise ValueError("Require bands >= 1, even width >= 4 and scale >= 1")
-        self.bands, self.scale = bands, scale
+        self.bands, self.scale, self.routing = bands, scale, routing
+        self.head = head or ("paper" if routing == "paper" else "legacy")
+        if self.head not in ("paper", "legacy"):
+            raise ValueError("Unknown reconstruction head")
         self.config = dict(bands=bands, width=width, experts=experts, top_k=top_k,
-                           scale=scale, routing=routing, dispatch=dispatch)
+                           scale=scale, routing=routing, dispatch=dispatch, head=self.head)
         self.msconv = nn.Conv2d(bands, width, 3, padding=1)
         self.pconv = nn.Conv2d(1, width, 3, padding=1)
         self.msencoder = FeatureEncoder(width)
         self.panencoder = FeatureEncoder(width)
-        self.maskp = MaskPredictor(width)
+        self.maskp = MaskPredictor(width, slope=0.1 if routing == "legacy" else 0.0)
         self.moeInstance = MOEInstance(width, experts, top_k, routing, dispatch)
         self.decoder = ExpertMixture(width, experts, top_k, "fusion", routing, dispatch)
-        self.refine = Refine(width, bands)
+        self.refine = Refine(width, bands) if self.head == "legacy" else nn.Conv2d(width, bands, 1)
 
     def _validate(self, ms: Tensor, pan: Tensor) -> None:
         if ms.ndim != 4 or pan.ndim != 4 or ms.shape[1] != self.bands or pan.shape[1] != 1:
@@ -94,5 +98,9 @@ class FAMENet(nn.Module):
         panf = self.panencoder(self.pconv(pan))
         mask = self.maskp(torch.cat((msf, panf), dim=1), self.training if sample_mask is None else sample_mask)
         lf, hf, lg, hg = self.moeInstance(panf, msf, mask)
-        dec, dg = self.decoder(torch.cat((msf, hf, panf, lf), dim=1))
-        return FAMEOutput(self.refine(dec) + mhr, mask, (lg, hg, dg))
+        features = (msf, panf, lf, hf) if self.routing == "paper" else (msf, hf, panf, lf)
+        dec, dg = self.decoder(torch.cat(features, dim=1))
+        hrms = self.refine(dec)
+        if self.head == "legacy":
+            hrms = hrms + mhr
+        return FAMEOutput(hrms, mask, (lg, hg, dg))

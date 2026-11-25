@@ -87,3 +87,18 @@ def test_shape_and_load_loss():
     with pytest.raises(ValueError):
         net(ms, pan[..., :7, :])
     torch.testing.assert_close(load_loss(torch.tensor([[.5,.5,0,0],[0,0,.5,.5]])), torch.tensor(0.))
+
+def test_default_paper_profile_and_equations():
+    import torch.nn.functional as F
+    model = FAMENet(width=4)
+    assert model.config["routing"] == "paper"
+    assert model.refine.kernel_size == (1, 1)
+    gate = model.decoder.gate
+    x = torch.randn(2,4,8,8)
+    pooled = x.mean(dim=(-1,-2)) + x.amax(dim=(-1,-2))
+    v = gate.fc1(pooled) + F.softplus(gate.fc0(pooled))
+    vals, ids = v.topk(2, dim=1)
+    expected = torch.zeros_like(v).scatter(1, ids, vals.softmax(1))
+    torch.testing.assert_close(gate(x), expected)
+    assert model.maskp.relu.negative_slope == 0
+    assert FAMENet(width=4,routing="legacy").decoder.pre_fuse[0].F.relu_1.negative_slope == 1

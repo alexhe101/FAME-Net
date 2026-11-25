@@ -5,10 +5,10 @@ from torch.nn import functional as F
 
 
 class ConvProce(nn.Module):
-    def __init__(self, channels: int):
+    def __init__(self, channels: int, slope: float = 0.2):
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, 3, padding=1)
-        self.relu1 = nn.LeakyReLU(0.2)
+        self.relu1 = nn.LeakyReLU(slope)
         self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -69,12 +69,12 @@ class InvertibleConv1x1(nn.Module):
 
 
 class InvBlock(nn.Module):
-    def __init__(self, channels: int, clamp: float = 0.8):
+    def __init__(self, channels: int, clamp: float = 0.8, slope: float = 0.2):
         super().__init__()
         self.clamp = clamp
-        self.F = HinResBlock(channels)
-        self.G = HinResBlock(channels)
-        self.H = HinResBlock(channels)
+        self.F = HinResBlock(channels, slope=slope)
+        self.G = HinResBlock(channels, slope=slope)
+        self.H = HinResBlock(channels, slope=slope)
         self.invconv = InvertibleConv1x1(2 * channels)
 
     def forward(self, x: Tensor) -> Tensor:

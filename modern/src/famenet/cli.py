@@ -17,7 +17,7 @@ from .model import FAMENet
 
 def make_model(a):
     return FAMENet(bands=a.bands, width=a.width, experts=a.experts, top_k=a.top_k,
-                   scale=a.scale, routing=a.routing, dispatch=a.dispatch).to(a.device)
+                   scale=a.scale, routing=a.routing, dispatch=a.dispatch, head=a.head).to(a.device)
 
 
 def sync(device):
@@ -116,8 +116,10 @@ def main(argv=None):
         p.add_argument("--experts", type=int, default=4)
         p.add_argument("--top-k", type=int, default=2)
         p.add_argument("--scale", type=int, default=4)
-        p.add_argument("--routing", choices=["legacy", "paper"], default="paper" if name=="train" else "legacy")
+        p.add_argument("--routing", choices=["legacy", "paper"], default="paper")
         p.add_argument("--dispatch", choices=["sparse", "dense"], default="sparse")
+        p.add_argument("--head", choices=["paper", "legacy"], default=None,
+                       help="Defaults to reconstruction head of selected routing profile")
         if name == "infer":
             p.add_argument("--checkpoint", required=True)
             p.add_argument("--input", required=True)

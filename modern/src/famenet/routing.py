@@ -83,9 +83,12 @@ class ExpertMixture(nn.Module):
         self.dispatch = dispatch
         self.gate = GateNetwork(channels, num_experts, top_k, routing)
         factory = {"low": LfInstance, "high": HfInstance, "fusion": ConvProce}[kind]
+        if kind == "fusion" and routing == "paper":
+            factory = lambda c: ConvProce(c, slope=0.0)
         in_channels = channels * (4 if kind == "fusion" else 2)
         self.pre_fuse = nn.Sequential(
-            InvBlock(in_channels // 2), nn.Conv2d(in_channels, channels, 1)
+            InvBlock(in_channels // 2, slope=1.0 if routing == "legacy" else 0.2),
+            nn.Conv2d(in_channels, channels, 1)
         )
         self.expert_networks_d = nn.ModuleList(factory(channels) for _ in range(num_experts))
 

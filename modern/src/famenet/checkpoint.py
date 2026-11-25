@@ -39,6 +39,11 @@ def load_weights(model: FAMENet, path: str | Path) -> None:
     data = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(data, Mapping):
         raise ValueError("Expected a tensor state dictionary")
+    config = data.get("config")
+    if isinstance(config, Mapping):
+        for field in ("bands", "width", "experts", "top_k", "scale", "routing", "head"):
+            if field in config and config[field] != model.config[field]:
+                raise ValueError(f"Checkpoint {field}={config[field]!r} differs from model {model.config[field]!r}")
     for key in ("net", "state_dict", "model", "params"):
         if key in data and isinstance(data[key], Mapping):
             data = data[key]
