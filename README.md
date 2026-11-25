@@ -12,7 +12,7 @@ Xuanhua He\*, Keyu Yan\*, Rui Li, Chengjun Xie, Jie Zhang†, Man Zhou†
 
 [AAAI Paper](https://doi.org/10.1609/aaai.v38i3.27984) · [arXiv](https://arxiv.org/abs/2401.02151) · [Project page](https://alexhe101.github.io/FAME-Net/) · [Modern documentation](modern/README.md)
 
-[![FAME-Net Modern CI](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml/badge.svg?branch=refactor%2Fmodern-pytorch)](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml)
+[![FAME-Net Modern CI](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml/badge.svg)](https://github.com/alexhe101/FAME-Net/actions/workflows/famenet-modern.yml)
 
 </div>
 
@@ -58,7 +58,6 @@ Python 3.10+ and PyTorch 2.4+. Install an appropriate PyTorch build for your dev
 ```bash
 git clone https://github.com/alexhe101/FAME-Net.git
 cd FAME-Net
-git switch refactor/modern-pytorch
 python -m pip install -e './modern[dev]'
 python -m pytest modern/tests -q -rs
 ```
@@ -99,6 +98,10 @@ See [modern documentation](modern/README.md) for NPZ inputs, DCT-derived mask la
 The original release does not provide its training datasets or trained weights. Prepare sensor-specific paired samples under the Wald protocol, matching the training radiometry, band order and spatial scale. Original experiments used WorldView-II, GaoFen2 and WorldView-III. The modern loader accepts explicit NPZ arrays and preserves all multispectral channels at output. Exact private mask-label thresholds and degradation settings are unavailable.
 
 The old `main.py`, `test.py`, `model/` and `solver/` are preserved for historical reference; the release contains inconsistent expert dispatch and solver return contracts. Use the new CLI for new experiments. The new profile is a documented reconstruction and has not reproduced the original dataset metrics.
+
+## Validation
+
+[GitHub Actions](https://github.com/alexhe101/FAME-Net/actions/runs/45544297751): all 18 CPU tests passed on each of Python 3.10 and 3.12, including repaired legacy-reference parity and paper-router checks. These are synthetic regression tests, not a reproduction of the published image-quality metrics or a GPU speed benchmark.
 
 ## Repository layout
 
